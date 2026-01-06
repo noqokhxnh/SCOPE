@@ -263,13 +263,54 @@ def get_llm_assessment(home_team, away_team, predictions, statistics):
 - Other thresholds (8.5, 11.5, 12.5) mostly follow base rates
 - Standard odds are around 1.91 (-110), requiring 52.4% win rate to break even
 
-Please provide:
-1. **Match Analysis** - Key factors that might influence corner count
-2. **Recommended Bet** - Your top recommendation with reasoning
-3. **Risk Assessment** - Confidence level and potential concerns
-4. **Alternative Bets** - Other viable options if any
+---
 
-Keep the analysis concise and actionable."""
+## INSTRUCTIONS
+
+You MUST follow this EXACT output format. Do not deviate from this structure.
+
+---
+
+## OUTPUT FORMAT (Follow Exactly)
+
+### 🎯 PRIMARY RECOMMENDATION
+
+**Bet:** [OVER/UNDER] [threshold] corners
+**Confidence:** [HIGH/MEDIUM/LOW]
+**Edge:** [Yes - model shows edge / No - no statistical edge]
+
+### 📊 MATCH ANALYSIS
+
+[2-3 sentences analyzing key factors: team form, playing styles, tactical tendencies that affect corner count]
+
+### 📈 MODEL INSIGHTS
+
+| Threshold | Signal | Strength |
+|-----------|--------|----------|
+| O/U 8.5 | [OVER/UNDER/NEUTRAL] | [Strong/Moderate/Weak] |
+| O/U 9.5 | [OVER/UNDER/NEUTRAL] | [Strong/Moderate/Weak] |
+| O/U 10.5 | [OVER/UNDER/NEUTRAL] | [Strong/Moderate/Weak] |
+| O/U 11.5 | [OVER/UNDER/NEUTRAL] | [Strong/Moderate/Weak] |
+| O/U 12.5 | [OVER/UNDER/NEUTRAL] | [Strong/Moderate/Weak] |
+
+### ⚠️ RISK FACTORS
+
+- [Risk factor 1]
+- [Risk factor 2]
+- [Risk factor 3 if applicable]
+
+### 🔄 ALTERNATIVE BETS
+
+1. **[Bet 1]:** [Brief reasoning]
+2. **[Bet 2]:** [Brief reasoning]
+
+### 💡 VERDICT
+
+[1-2 sentence final summary with clear action recommendation]
+
+---
+
+IMPORTANT: Follow the exact format above. Use the exact headers with emojis. Keep each section concise. Do not add extra sections."""
 
     try:
         response = requests.post(
