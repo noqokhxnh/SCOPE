@@ -19,7 +19,7 @@ warnings.filterwarnings('ignore')
 # =============================================================================
 TEST_SEASON = '2025-26'
 ODDS_DECIMAL = 1.91
-MODEL_DIR = 'models/classifier'
+MODEL_DIR = 'api/models'
 
 # LightGBM params
 LGBM_PARAMS = {
@@ -59,7 +59,7 @@ SEASONS = {
     '2025-26': '2526'
 }
 
-BASE_URL = 'https://www.football-data.co.uk/mmz4281/{code}/E0.csv'
+BASE_URL = 'https://www.football-data.co.uk/mmz4281/{code}/SP1.csv'
 COLS = ['Date', 'HomeTeam', 'AwayTeam', 'FTHG', 'FTAG', 'HS', 'AS', 'HST', 'AST', 'HC', 'AC', 'HF', 'AF', 'HY', 'AY']
 
 print("\nLoading data (2010-2026)...")

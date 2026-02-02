@@ -60,7 +60,7 @@ SEASONS = {
     '2023-24': '2324', '2024-25': '2425', '2025-26': '2526'
 }
 
-BASE_URL = 'https://www.football-data.co.uk/mmz4281/{code}/E0.csv'
+BASE_URL = 'https://www.football-data.co.uk/mmz4281/{code}/SP1.csv'
 COLS = ['Date', 'HomeTeam', 'AwayTeam', 'FTHG', 'FTAG', 'HS', 'AS', 'HST', 'AST', 'HC', 'AC']
 
 print("\nLoading data...")

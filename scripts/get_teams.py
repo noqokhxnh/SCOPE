@@ -3,7 +3,7 @@ Get current 25-26 Premier League team list from football-data.co.uk
 """
 import pandas as pd
 
-url = 'https://www.football-data.co.uk/mmz4281/2526/E0.csv'
+url = 'https://www.football-data.co.uk/mmz4281/2526/SP1.csv'
 df = pd.read_csv(url)
 teams = sorted(set(df['HomeTeam'].unique()) | set(df['AwayTeam'].unique()))
 

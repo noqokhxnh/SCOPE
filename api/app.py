@@ -2,6 +2,7 @@
 EPL SCOPE - Flask REST API
 Premier League Corner Prediction API
 """
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import pandas as pd
@@ -11,42 +12,69 @@ import glob
 import requests
 import os
 from dotenv import load_dotenv
-from features import FEATURES, compute_features_for_match, get_team_statistics, get_head_to_head
+from features import (
+    FEATURES,
+    compute_features_for_match,
+    get_team_statistics,
+    get_head_to_head,
+)
 
 # Load environment variables from .env file
-load_dotenv()
+dotenv_path = os.path.join(os.path.dirname(__file__), ".env")
+load_dotenv(dotenv_path)
 
 app = Flask(__name__)
-CORS(app, resources={r"/api/*": {
-    "origins": ["https://corner.qnguyen3.dev", "http://localhost:3000", "http://localhost:5173"],
-    "methods": ["GET", "POST", "OPTIONS"],
-    "allow_headers": ["Content-Type"]
-}})
+CORS(
+    app,
+    resources={
+        r"/api/*": {
+            "origins": [
+                "http://localhost:3000",
+                "http://localhost:5173",
+                "http://localhost:6000",
+                "http://localhost:6001",
+            ],
+            "methods": ["GET", "POST", "OPTIONS"],
+            "allow_headers": ["Content-Type"],
+        }
+    },
+)
 
 # Configuration
-DATA_URL = 'https://www.football-data.co.uk/mmz4281/2526/E0.csv'
-HISTORICAL_SEASONS = ['2324', '2425', '2526']  # Last 3 seasons for H2H
-OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
+# Configuration
+# Configuration
+LEAGUES = {
+    "I1": "Serie A (Italy)",
+    "F1": "Ligue 1 (France)",
+    "D1": "Bundesliga (Germany)",
+    "SP1": "La Liga (Spain)",
+    "E0": "Premier League (England)"
+}
+
+DEFAULT_LEAGUE = "E0"
+
+# Base URL pattern: .../mmz4281/{season}/{code}.csv
+BASE_DATA_URL = "https://www.football-data.co.uk/mmz4281/{season}/{code}.csv"
+CURRENT_SEASON = "2526"
+HISTORICAL_SEASONS = ["2223", "2324", "2425"]  # Last 3 seasons for H2H
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 
 # Model configurations (threshold -> window, confidence)
 # Updated with optimized thresholds from analysis (2026-01-07)
 MODEL_CONFIGS = {
-    8.5: {'window': 5, 'confidence': 0.70},
-    9.5: {'window': 5, 'confidence': 0.60},
-    10.5: {'window': 5, 'confidence': 0.65},
-    11.5: {'window': 5, 'confidence': 0.70},
-    12.5: {'window': 5, 'confidence': 0.70},
+    8.5: {"window": 5, "confidence": 0.70},
+    9.5: {"window": 5, "confidence": 0.60},
+    10.5: {"window": 5, "confidence": 0.65},
+    11.5: {"window": 5, "confidence": 0.70},
+    12.5: {"window": 5, "confidence": 0.70},
 }
 
 # Load models at startup
 models = {}
 
 # URL for downloading models zip (set via environment variable or use default)
-MODELS_ZIP_URL = os.environ.get(
-    'MODELS_ZIP_URL',
-    'https://huggingface.co/qnguyen3/epl-corners-2526-v1/resolve/main/models.zip'
-)
+MODELS_ZIP_URL = os.environ.get("MODELS_ZIP_URL")
 
 
 def download_and_extract_models():
@@ -54,10 +82,12 @@ def download_and_extract_models():
     import zipfile
     from io import BytesIO
 
-    model_dir = os.path.join(os.path.dirname(__file__), 'models')
+    model_dir = os.path.join(os.path.dirname(__file__), "models")
 
     # Check if models already exist
-    if os.path.exists(model_dir) and any(f.endswith('.pkl') for f in os.listdir(model_dir)):
+    if os.path.exists(model_dir) and any(
+        f.endswith(".pkl") for f in os.listdir(model_dir)
+    ):
         print("Models already present, skipping download")
         return
 
@@ -83,7 +113,7 @@ def download_and_extract_models():
 def load_models():
     """Load all classifier models from the models directory."""
     global models
-    model_dir = os.path.join(os.path.dirname(__file__), 'models')
+    model_dir = os.path.join(os.path.dirname(__file__), "models")
 
     # Try to download models if not present
     download_and_extract_models()
@@ -92,56 +122,62 @@ def load_models():
         print(f"Warning: Models directory not found at {model_dir}")
         return
 
-    for f in glob.glob(os.path.join(model_dir, '*.pkl')):
+    for f in glob.glob(os.path.join(model_dir, "*.pkl")):
         try:
-            with open(f, 'rb') as file:
+            with open(f, "rb") as file:
                 data = pickle.load(file)
-                threshold = data['threshold']
+                threshold = data["threshold"]
                 models[threshold] = data
                 print(f"Loaded model for O/U {threshold}")
         except Exception as e:
             print(f"Error loading {f}: {e}")
 
+
 # Load models on startup
 load_models()
 
 
-def fetch_data():
+def fetch_data(league_code):
     """Fetch fresh data from football-data.co.uk (current season only)."""
     try:
-        df = pd.read_csv(DATA_URL, encoding='utf-8', on_bad_lines='skip')
-        df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
-        df = df.dropna(subset=['Date', 'HC', 'AC'])
-        df = df.sort_values('Date').reset_index(drop=True)
-        df['TotalCorners'] = df['HC'] + df['AC']
+        url = BASE_DATA_URL.format(season=CURRENT_SEASON, code=league_code)
+        print(f"Fetching data from: {url}")
+        df = pd.read_csv(url, encoding="utf-8", on_bad_lines="skip")
+        df["Date"] = pd.to_datetime(df["Date"], dayfirst=True, errors="coerce")
+        df = df.dropna(subset=["Date", "HC", "AC"])
+        df = df.sort_values("Date").reset_index(drop=True)
+        df["TotalCorners"] = df["HC"] + df["AC"]
         return df
     except Exception as e:
-        print(f"Error fetching data: {e}")
+        import traceback
+
+        traceback.print_exc()
+        print(f"Error fetching data for {league_code}: {e}")
         return None
 
 
-def fetch_historical_data():
+def fetch_historical_data(league_code):
     """Fetch multiple seasons for H2H analysis."""
     try:
         dfs = []
         for season in HISTORICAL_SEASONS:
-            url = f'https://www.football-data.co.uk/mmz4281/{season}/E0.csv'
+            url = BASE_DATA_URL.format(season=season, code=league_code)
             try:
-                df = pd.read_csv(url, encoding='utf-8', on_bad_lines='skip')
-                df['Season'] = season
+                df = pd.read_csv(url, encoding="utf-8", on_bad_lines="skip")
+                df["Season"] = season
                 dfs.append(df)
             except:
                 pass
         if not dfs:
             return None
         df = pd.concat(dfs, ignore_index=True)
-        df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
-        df = df.dropna(subset=['Date', 'HC', 'AC'])
-        df = df.sort_values('Date').reset_index(drop=True)
-        df['TotalCorners'] = df['HC'] + df['AC']
+        df["Date"] = pd.to_datetime(df["Date"], dayfirst=True, errors="coerce")
+        df = df.dropna(subset=["Date", "HC", "AC"])
+        df = df.sort_values("Date").reset_index(drop=True)
+        df["TotalCorners"] = df["HC"] + df["AC"]
         return df
     except Exception as e:
-        print(f"Error fetching historical data: {e}")
+        print(f"Error fetching historical data for {league_code}: {e}")
         return None
 
 
@@ -150,8 +186,8 @@ def run_predictions(df, home_team, away_team):
     predictions = {}
 
     for threshold, config in MODEL_CONFIGS.items():
-        window = config['window']
-        confidence = config['confidence']
+        window = config["window"]
+        confidence = config["confidence"]
 
         # Get features for this match
         features = compute_features_for_match(df, home_team, away_team, window=window)
@@ -159,17 +195,17 @@ def run_predictions(df, home_team, away_team):
         # Check if model is loaded
         if threshold not in models:
             predictions[str(threshold)] = {
-                'prob_over': 0.5,
-                'prob_under': 0.5,
-                'recommendation': 'NO BET',
-                'confidence_threshold': confidence,
-                'error': 'Model not loaded'
+                "prob_over": 0.5,
+                "prob_under": 0.5,
+                "recommendation": "NO BET",
+                "confidence_threshold": confidence,
+                "error": "Model not loaded",
             }
             continue
 
         model_data = models[threshold]
-        model = model_data['model']
-        feature_list = model_data['features']
+        model = model_data["model"]
+        feature_list = model_data["features"]
 
         # Prepare feature vector
         X = pd.DataFrame([features])[feature_list]
@@ -181,25 +217,25 @@ def run_predictions(df, home_team, away_team):
 
             # Determine recommendation
             if prob_over > confidence:
-                recommendation = 'OVER'
+                recommendation = "OVER"
             elif prob_under > confidence:
-                recommendation = 'UNDER'
+                recommendation = "UNDER"
             else:
-                recommendation = 'NO BET'
+                recommendation = "NO BET"
 
             predictions[str(threshold)] = {
-                'prob_over': round(float(prob_over), 4),
-                'prob_under': round(float(prob_under), 4),
-                'recommendation': recommendation,
-                'confidence_threshold': confidence,
+                "prob_over": round(float(prob_over), 4),
+                "prob_under": round(float(prob_under), 4),
+                "recommendation": recommendation,
+                "confidence_threshold": confidence,
             }
         except Exception as e:
             predictions[str(threshold)] = {
-                'prob_over': 0.5,
-                'prob_under': 0.5,
-                'recommendation': 'NO BET',
-                'confidence_threshold': confidence,
-                'error': str(e)
+                "prob_over": 0.5,
+                "prob_under": 0.5,
+                "recommendation": "NO BET",
+                "confidence_threshold": confidence,
+                "error": str(e),
             }
 
     return predictions
@@ -220,34 +256,34 @@ def get_llm_assessment(home_team, away_team, predictions, statistics):
 | Threshold | P(Over) | P(Under) | Recommendation |
 |-----------|---------|----------|----------------|
 """
-    for threshold in ['8.5', '9.5', '10.5', '11.5', '12.5']:
+    for threshold in ["8.5", "9.5", "10.5", "11.5", "12.5"]:
         p = predictions.get(threshold, {})
         prompt += f"| O/U {threshold} | {p.get('prob_over', 0):.1%} | {p.get('prob_under', 0):.1%} | {p.get('recommendation', 'N/A')} |\n"
 
     # Add team statistics
-    home_stats = statistics.get('home_team', {})
-    away_stats = statistics.get('away_team', {})
+    home_stats = statistics.get("home_team", {})
+    away_stats = statistics.get("away_team", {})
 
     prompt += f"""
 
 ## {home_team} Recent Form (Home Games)
-- Avg Corners For: {home_stats.get('avg_corners_for', 0):.1f}
-- Avg Corners Against: {home_stats.get('avg_corners_against', 0):.1f}
-- Avg Total Corners: {home_stats.get('avg_total_corners', 0):.1f}
-- Over 9.5 Rate: {home_stats.get('over_rates', {}).get('9.5', 0):.0%}
-- Over 10.5 Rate: {home_stats.get('over_rates', {}).get('10.5', 0):.0%}
+- Avg Corners For: {home_stats.get("avg_corners_for", 0):.1f}
+- Avg Corners Against: {home_stats.get("avg_corners_against", 0):.1f}
+- Avg Total Corners: {home_stats.get("avg_total_corners", 0):.1f}
+- Over 9.5 Rate: {home_stats.get("over_rates", {}).get("9.5", 0):.0%}
+- Over 10.5 Rate: {home_stats.get("over_rates", {}).get("10.5", 0):.0%}
 
 ## {away_team} Recent Form (Away Games)
-- Avg Corners For: {away_stats.get('avg_corners_for', 0):.1f}
-- Avg Corners Against: {away_stats.get('avg_corners_against', 0):.1f}
-- Avg Total Corners: {away_stats.get('avg_total_corners', 0):.1f}
-- Over 9.5 Rate: {away_stats.get('over_rates', {}).get('9.5', 0):.0%}
-- Over 10.5 Rate: {away_stats.get('over_rates', {}).get('10.5', 0):.0%}
+- Avg Corners For: {away_stats.get("avg_corners_for", 0):.1f}
+- Avg Corners Against: {away_stats.get("avg_corners_against", 0):.1f}
+- Avg Total Corners: {away_stats.get("avg_total_corners", 0):.1f}
+- Over 9.5 Rate: {away_stats.get("over_rates", {}).get("9.5", 0):.0%}
+- Over 10.5 Rate: {away_stats.get("over_rates", {}).get("10.5", 0):.0%}
 
 ## Head-to-Head
 """
-    h2h = statistics.get('head_to_head', {})
-    if h2h.get('matches'):
+    h2h = statistics.get("head_to_head", {})
+    if h2h.get("matches"):
         prompt += f"- Avg Total Corners in H2H: {h2h.get('avg_total_corners', 0):.1f}\n"
         prompt += f"- {home_team} Wins: {h2h.get('home_team_wins', 0)}, {away_team} Wins: {h2h.get('away_team_wins', 0)}, Draws: {h2h.get('draws', 0)}\n"
     else:
@@ -311,22 +347,20 @@ IMPORTANT: Follow the exact format above. Use the exact headers with emojis. Kee
         response = requests.post(
             OPENROUTER_URL,
             headers={
-                'Authorization': f'Bearer {OPENROUTER_API_KEY}',
-                'Content-Type': 'application/json',
-                'HTTP-Referer': 'https://epl-scope.vercel.app',
-                'X-Title': 'EPL SCOPE'
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "http://localhost:3000",
+                "X-Title": "EPL SCOPE",
             },
             json={
-                'model': 'google/gemini-3-flash-preview',
-                'messages': [
-                    {'role': 'user', 'content': prompt}
-                ]
+                "model": 'google/gemini-3-flash-preview',
+                "messages": [{"role": "user", "content": prompt}],
             },
-            timeout=60
+            timeout=60,
         )
         response.raise_for_status()
         data = response.json()
-        return data['choices'][0]['message']['content']
+        return data["choices"][0]["message"]["content"]
     except Exception as e:
         return f"LLM assessment failed: {str(e)}"
 
@@ -334,43 +368,53 @@ IMPORTANT: Follow the exact format above. Use the exact headers with emojis. Kee
 def prepare_charts_data(df, home_team, away_team, predictions):
     """Prepare data for frontend charts."""
     # Home team recent corner history
-    home_matches = df[df['HomeTeam'] == home_team].tail(10)
+    home_matches = df[df["HomeTeam"] == home_team].tail(10)
     home_corner_history = []
     for _, row in home_matches.iterrows():
-        home_corner_history.append({
-            'date': row['Date'].strftime('%m/%d') if hasattr(row['Date'], 'strftime') else str(row['Date']),
-            'opponent': row['AwayTeam'],
-            'corners_for': int(row['HC']),
-            'corners_against': int(row['AC']),
-            'total': int(row['HC'] + row['AC'])
-        })
+        home_corner_history.append(
+            {
+                "date": row["Date"].strftime("%m/%d")
+                if hasattr(row["Date"], "strftime")
+                else str(row["Date"]),
+                "opponent": row["AwayTeam"],
+                "corners_for": int(row["HC"]),
+                "corners_against": int(row["AC"]),
+                "total": int(row["HC"] + row["AC"]),
+            }
+        )
 
     # Away team recent corner history
-    away_matches = df[df['AwayTeam'] == away_team].tail(10)
+    away_matches = df[df["AwayTeam"] == away_team].tail(10)
     away_corner_history = []
     for _, row in away_matches.iterrows():
-        away_corner_history.append({
-            'date': row['Date'].strftime('%m/%d') if hasattr(row['Date'], 'strftime') else str(row['Date']),
-            'opponent': row['HomeTeam'],
-            'corners_for': int(row['AC']),
-            'corners_against': int(row['HC']),
-            'total': int(row['HC'] + row['AC'])
-        })
+        away_corner_history.append(
+            {
+                "date": row["Date"].strftime("%m/%d")
+                if hasattr(row["Date"], "strftime")
+                else str(row["Date"]),
+                "opponent": row["HomeTeam"],
+                "corners_for": int(row["AC"]),
+                "corners_against": int(row["HC"]),
+                "total": int(row["HC"] + row["AC"]),
+            }
+        )
 
     # Probability by threshold for line chart
     prob_by_threshold = []
-    for threshold in ['8.5', '9.5', '10.5', '11.5', '12.5']:
+    for threshold in ["8.5", "9.5", "10.5", "11.5", "12.5"]:
         p = predictions.get(threshold, {})
-        prob_by_threshold.append({
-            'threshold': threshold,
-            'prob_over': p.get('prob_over', 0.5),
-            'prob_under': p.get('prob_under', 0.5),
-        })
+        prob_by_threshold.append(
+            {
+                "threshold": threshold,
+                "prob_over": p.get("prob_over", 0.5),
+                "prob_under": p.get("prob_under", 0.5),
+            }
+        )
 
     return {
-        'home_corner_history': home_corner_history,
-        'away_corner_history': away_corner_history,
-        'probability_by_threshold': prob_by_threshold
+        "home_corner_history": home_corner_history,
+        "away_corner_history": away_corner_history,
+        "probability_by_threshold": prob_by_threshold,
     }
 
 
@@ -378,90 +422,110 @@ def prepare_charts_data(df, home_team, away_team, predictions):
 # API ROUTES
 # =============================================================================
 
-@app.route('/api/health')
+
+@app.route("/api/health")
 def health():
     """Health check endpoint."""
-    return jsonify({
-        'status': 'healthy',
-        'models_loaded': len(models),
-        'thresholds': list(models.keys())
-    })
+    return jsonify(
+        {
+            "status": "healthy",
+            "models_loaded": len(models),
+            "thresholds": list(models.keys()),
+        }
+    )
 
 
-@app.route('/api/teams')
+@app.route("/api/leagues")
+def get_leagues():
+    """Get list of available leagues."""
+    return jsonify({"leagues": LEAGUES, "default": DEFAULT_LEAGUE})
+
+
+@app.route("/api/teams")
 def get_teams():
-    """Get list of current season teams."""
+    """Get list of current season teams for a specific league."""
     try:
-        df = fetch_data()
+        league_code = request.args.get("league", DEFAULT_LEAGUE)
+        if league_code not in LEAGUES:
+             return jsonify({"error": "Invalid league code"}), 400
+             
+        df = fetch_data(league_code)
         if df is None:
-            return jsonify({'error': 'Failed to fetch data'}), 500
+            return jsonify({"error": "Failed to fetch data"}), 500
 
-        teams = sorted(set(df['HomeTeam'].unique()) | set(df['AwayTeam'].unique()))
-        return jsonify({'teams': teams})
+        teams = sorted(set(df["HomeTeam"].unique()) | set(df["AwayTeam"].unique()))
+        return jsonify({"teams": teams})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/predict', methods=['POST'])
+@app.route("/api/predict", methods=["POST"])
 def predict():
     """Run predictions for a match."""
     try:
         data = request.json
-        home_team = data.get('home_team')
-        away_team = data.get('away_team')
+        home_team = data.get("home_team")
+        away_team = data.get("away_team")
+
+        league_code = data.get("league", DEFAULT_LEAGUE)
+        if league_code not in LEAGUES:
+            return jsonify({"error": "Invalid league code"}), 400
 
         if not home_team or not away_team:
-            return jsonify({'error': 'home_team and away_team are required'}), 400
+            return jsonify({"error": "home_team and away_team are required"}), 400
 
         if home_team == away_team:
-            return jsonify({'error': 'Home and away teams must be different'}), 400
+            return jsonify({"error": "Home and away teams must be different"}), 400
 
         # Fetch fresh data
-        df = fetch_data()
+        df = fetch_data(league_code)
         if df is None:
-            return jsonify({'error': 'Failed to fetch data'}), 500
+            return jsonify({"error": "Failed to fetch data"}), 500
 
         # Validate teams
-        all_teams = set(df['HomeTeam'].unique()) | set(df['AwayTeam'].unique())
+        all_teams = set(df["HomeTeam"].unique()) | set(df["AwayTeam"].unique())
         if home_team not in all_teams:
-            return jsonify({'error': f'Unknown team: {home_team}'}), 400
+            return jsonify({"error": f"Unknown team: {home_team}"}), 400
         if away_team not in all_teams:
-            return jsonify({'error': f'Unknown team: {away_team}'}), 400
+            return jsonify({"error": f"Unknown team: {away_team}"}), 400
 
         # Run predictions
         predictions = run_predictions(df, home_team, away_team)
 
         # Fetch historical data for H2H (last 3 seasons)
-        df_historical = fetch_historical_data()
+        df_historical = fetch_historical_data(league_code)
 
         # Get statistics (use current season for team stats, historical for H2H)
         statistics = {
-            'home_team': get_team_statistics(df, home_team),
-            'away_team': get_team_statistics(df, away_team),
-            'head_to_head': get_head_to_head(df_historical if df_historical is not None else df, home_team, away_team)
+            "home_team": get_team_statistics(df, home_team),
+            "away_team": get_team_statistics(df, away_team),
+            "head_to_head": get_head_to_head(
+                df_historical if df_historical is not None else df, home_team, away_team
+            ),
         }
 
         # Get LLM assessment
-        llm_assessment = get_llm_assessment(home_team, away_team, predictions, statistics)
+        llm_assessment = get_llm_assessment(
+            home_team, away_team, predictions, statistics
+        )
 
         # Prepare charts data
         charts_data = prepare_charts_data(df, home_team, away_team, predictions)
 
-        return jsonify({
-            'match': {
-                'home_team': home_team,
-                'away_team': away_team
-            },
-            'predictions': predictions,
-            'statistics': statistics,
-            'llm_assessment': llm_assessment,
-            'charts_data': charts_data
-        })
+        return jsonify(
+            {
+                "match": {"home_team": home_team, "away_team": away_team},
+                "predictions": predictions,
+                "statistics": statistics,
+                "llm_assessment": llm_assessment,
+                "charts_data": charts_data,
+            }
+        )
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
 
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=True)
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
